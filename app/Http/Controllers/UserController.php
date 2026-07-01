@@ -13,27 +13,33 @@ use Exception;
 class UserController extends Controller
 {
     /**
-     * Daftar pengguna dengan search & filter.
+     * Get All Users
      *
-     * Query params:
-     *  - search   : cari berdasarkan username
-     *  - role_id  : filter berdasarkan role
-     *  - per_page : jumlah per halaman (default 10)
+     * Daftar pengguna dengan paginasi, pencarian, dan filter role.
+     * 
+     * @tags User Management
+     *
+     * @queryParam search string opsional Cari berdasarkan name. Example: budi
+     * @queryParam role_id int opsional Filter berdasarkan role. Example: 2
+     * @queryParam per_page int opsional Jumlah per halaman. Default: 25
      */
     public function index(Request $request)
     {
         try {
-            $query = User::with('role');
+            $query = User::with('roles');
 
-            // Search berdasarkan username
+            // Search berdasarkan name
             if ($request->filled('search')) {
                 $search = $request->query('search');
-                $query->where('username', 'like', "%{$search}%");
+                $query->where('name', 'like', "%{$search}%");
             }
 
             // Filter berdasarkan role
             if ($request->filled('role_id')) {
-                $query->where('role_id', $request->query('role_id'));
+                $roleId = $request->query('role_id');
+                $query->whereHas('roles', function($q) use ($roleId) {
+                    $q->where('roles.id', $roleId);
+                });
             }
 
             $perPage = $request->query('per_page', 25);
@@ -52,15 +58,24 @@ class UserController extends Controller
     }
 
     /**
-     * Tambah pengguna baru.
+     * Create New User
+     *
+     * Menambahkan pengguna baru ke dalam sistem. Password akan di-hash secara otomatis.
+     * 
+     * @tags User Management
      */
     public function store(StoreUserRequest $request)
     {
         try {
             $validated = $request->validated();
+            $validated['password'] = \Illuminate\Support\Facades\Hash::make($validated['password']);
+
+            $roles = $validated['roles'];
+            unset($validated['roles']);
 
             $result = User::create($validated);
-            $result->load('role');
+            $result->roles()->attach($roles);
+            $result->load('roles');
 
             return response()->json([
                 'message' => 'User created successfully',
@@ -75,12 +90,17 @@ class UserController extends Controller
     }
 
     /**
-     * Detail pengguna.
+     * Get User Detail
+     * 
+     * Menampilkan detail spesifik dari satu pengguna berdasarkan ID.
+     * 
+     * @tags User Management
+     * @urlParam id string required ID dari user. Example: 1
      */
     public function show(string $id)
     {
         try {
-            $result = User::with('role')->find($id);
+            $result = User::with('roles')->find($id);
             if (!$result) {
                 return response()->json([
                     'message' => 'User not found',
@@ -100,7 +120,13 @@ class UserController extends Controller
     }
 
     /**
-     * Update pengguna.
+     * Update User
+     * 
+     * Memperbarui data pengguna. Super Admin (role_id = 1) tidak dapat di-edit melalui endpoint ini.
+     * Jika password dikosongkan, password tidak akan diubah.
+     * 
+     * @tags User Management
+     * @urlParam id string required ID dari user. Example: 2
      */
     public function update(UpdateUserRequest $request, string $id)
     {
@@ -112,7 +138,7 @@ class UserController extends Controller
                 ], 404);
             }
 
-            if ($result->role_id === 1) {
+            if ($result->roles->contains('id', 1)) {
                 return response()->json([
                     'message' => 'Super Admin tidak dapat diedit',
                 ], 403);
@@ -120,13 +146,21 @@ class UserController extends Controller
 
             $validated = $request->validated();
 
-            //password tetap raw
             if (empty($validated['password'])) {
                 unset($validated['password']);
+            } else {
+                $validated['password'] = \Illuminate\Support\Facades\Hash::make($validated['password']);
             }
 
-            $result->update($validated);
-            $result->load('role');
+            if (isset($validated['roles'])) {
+                $roles = $validated['roles'];
+                unset($validated['roles']);
+                $result->update($validated);
+                $result->roles()->sync($roles);
+            } else {
+                $result->update($validated);
+            }
+            $result->load('roles');
 
             return response()->json([
                 'message' => 'User updated successfully',
@@ -141,9 +175,13 @@ class UserController extends Controller
     }
 
     /**
-     * Hapus pengguna.
-     * Data terkait (rapat, assignment, dokumen) tetap tersimpan,
-     * hanya referensi user-nya yang di-null-kan.
+     * Delete User
+     * 
+     * Menghapus pengguna secara soft-delete. Data terkait (rapat, assignment, dokumen) tetap tersimpan.
+     * Akses API token (Sanctum) milik user akan langsung dicabut.
+     * 
+     * @tags User Management
+     * @urlParam id string required ID dari user. Example: 2
      */
     public function destroy(string $id)
     {
@@ -156,7 +194,7 @@ class UserController extends Controller
             }
 
             // Hanya super_admin yang tidak bisa dihapus
-            if ($result->role_id === 1) {
+            if ($result->roles->contains('id', 1)) {
                 return response()->json([
                     'message' => 'Super Admin tidak dapat dihapus',
                 ], 403);
@@ -180,7 +218,12 @@ class UserController extends Controller
     }
 
     /**
-     * Daftar role untuk dropdown.
+     * Get All Roles
+     * 
+     * Menampilkan daftar semua role yang ada di database. 
+     * Output dari endpoint ini di-cache.
+     * 
+     * @tags User Management
      */
     public function roles()
     {

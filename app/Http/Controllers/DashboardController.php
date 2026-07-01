@@ -15,6 +15,8 @@ class DashboardController extends Controller
     /**
      * Get dashboard data including summary statistics,
      * today's meetings, and room usage timeline.
+     * 
+     * @tags Dashboard
      */
     public function index(Request $request)
     {
@@ -49,7 +51,7 @@ class DashboardController extends Controller
                     ->select('id', 'title', 'start_time', 'end_time', 'status', 'room_id', 'created_by', 'organizer')
                     ->with([
                         'room:id,name,location',
-                        'creator:id,username'
+                        'creator:id,name'
                     ])
                     ->withCount([
                         'participants',

@@ -3,26 +3,38 @@
 namespace App\Models;
 
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 
-class User extends Authenticatable
+class User extends Authenticatable 
 {
-    use HasApiTokens, Notifiable, SoftDeletes;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
     protected $fillable = [
-        'username','email','password','role_id','is_active'
+        'name','email','nip','password','role_id','status'
     ];
 
     protected $hidden = [
         'password',
     ];
 
-    public function role()
+    public function roles()
     {
-        return $this->belongsTo(Role::class);
+        return $this->belongsToMany(Role::class);
+    }
+
+    public function syncRoles(array $roles)
+    {
+        $roleIds = [];
+        foreach ($roles as $roleName) {
+            $roleModel = \App\Models\Role::firstOrCreate(['role' => $roleName]);
+            $roleIds[] = $roleModel->id;
+        }
+        
+        $this->roles()->sync($roleIds);
     }
 
     public function meetingsCreated()
@@ -48,5 +60,10 @@ class User extends Authenticatable
     public function meetingDocuments()
     {
         return $this->hasMany(MeetingDocument::class, 'uploaded_by');
+    }
+
+    public function unitKerjas()
+    {
+        return $this->belongsToMany(WorkUnit::class, 'user_unit_kerja', 'user_id', 'unit_kerja_id')->withTimestamps();
     }
 }
