@@ -62,8 +62,8 @@ class User extends Authenticatable
         return $this->hasMany(MeetingDocument::class, 'uploaded_by');
     }
 
-    public function unitKerjas()
+    public function workUnit()
     {
-        return $this->belongsToMany(WorkUnit::class, 'user_unit_kerja', 'user_id', 'unit_kerja_id')->withTimestamps();
+        return $this->belongsTo(WorkUnit::class, 'work_unit_id');
     }
 }
